@@ -1,200 +1,211 @@
 package My_SBI;
 
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.sql.*;
 import java.util.Scanner;
+import java.util.Random;
 
 public class SBI_pd {
 
-   
     String url = "jdbc:mysql://localhost:3306/BANK_SBI";
     String user = "root";
     String password = "root";
     Scanner sc = new Scanner(System.in);
 
+    // This variable stores the Account Number of the currently logged-in user
+    private long loggedInAccount = -1; 
 
+    // --- 1. REGISTRATION ---
+    public void registerUser() {
+        System.out.println("\n--- New Customer Registration ---");
 
-    public void NewRegistration() {
-        System.out.println("New Registration....");
-        
+        System.out.print("Enter Your Name: ");
+        String name = sc.next(); // Using next() for single word or nextLine() for full name
+        // sc.nextLine(); // Uncomment if you switch to nextLine() above
 
-        String sql = "INSERT INTO customer (accountNo, name, balance) VALUES (?, ?, ?)";
+        System.out.print("Enter Mobile Number: ");
+        String mobile = sc.next();
 
+        System.out.print("Set a 6-Digit PIN: ");
+        int pin = sc.nextInt();
+
+        System.out.print("Enter Initial Deposit Amount: ");
+        double balance = sc.nextDouble();
+
+        // Auto-generate a random 10-digit Account Number
+        long accountNo = (long) (Math.random() * 1000000000L) + 1000000000L;
+
+        String sql = "INSERT INTO customer (accountNo, name, balance, mobile, pin) VALUES (?, ?, ?, ?, ?)";
 
         try (Connection conn = DriverManager.getConnection(url, user, password);
-             PreparedStatement preparedStatement = conn.prepareStatement(sql)) {
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
 
-            System.out.print("Enter New Account Number: ");
-            int accountNo = sc.nextInt();
+            pstmt.setLong(1, accountNo);
+            pstmt.setString(2, name);
+            pstmt.setDouble(3, balance);
+            pstmt.setString(4, mobile);
+            pstmt.setInt(5, pin);
 
-            System.out.print("Enter New Name of Customer: ");
-            String name = sc.next();
-            sc.nextLine(); 
-            
-
-            System.out.print("Enter initial balance: ");
-            double balance = sc.nextDouble();
-
-            preparedStatement.setInt(1, accountNo);
-            preparedStatement.setString(2, name);
-            preparedStatement.setDouble(3, balance);
-
-            int rowsAffected = preparedStatement.executeUpdate();
-
-            if (rowsAffected > 0) {
-                System.out.println("Account Created Successfully..");
+            int rows = pstmt.executeUpdate();
+            if (rows > 0) {
+                System.out.println("Registration Successful!");
+                System.out.println("---------------------------------");
+                System.out.println("Your System Generated Account No is: " + accountNo);
+                System.out.println("PLEASE NOTE THIS NUMBER FOR LOGIN.");
+                System.out.println("---------------------------------");
             } else {
-                System.out.println("Failed Database issued.");
+                System.out.println("Registration Failed.");
             }
 
         } catch (SQLException e) {
-            System.err.println("Database error: " + e.getMessage());
+            System.out.println("Db Error: " + e.getMessage());
         }
-   
     }
 
-    public void DepositMoney() {
-        System.out.println("--- Credit Money ---");
-        
-        try {
-            System.out.print("Enter account number: ");
-            int accNo = sc.nextInt();
-            System.out.print("Enter amount to deposit: ");
-            double amount = sc.nextDouble();
+    // --- 2. LOGIN ---
+    public boolean loginUser() {
+        System.out.println("\n--- Login ---");
+        System.out.print("Enter Account Number: ");
+        long accNo = sc.nextLong();
+        System.out.print("Enter 6-Digit PIN: ");
+        int pin = sc.nextInt();
 
-           
-            try (Connection conn = DriverManager.getConnection(url, user, password)) {
-                
-                String checkQuery = "SELECT balance FROM customer WHERE accountNo = ?";
-                double currentBalance = -1;
+        String sql = "SELECT * FROM customer WHERE accountNo = ? AND pin = ?";
 
-                
-                try (PreparedStatement psCheck = conn.prepareStatement(checkQuery)) {
-                    psCheck.setInt(1, accNo);
-                    try (ResultSet rs = psCheck.executeQuery()) {
-                        if (rs.next()) {
-                            currentBalance = rs.getDouble("balance");
-                        }
-                    }
-                }
+        try (Connection conn = DriverManager.getConnection(url, user, password);
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
 
-                if (currentBalance != -1) {
-                    double newBalance = currentBalance + amount;
-                    
-                    String updateQuery = "UPDATE customer SET balance = ? WHERE accountNo = ?"; 
-                    
-                   
-                    try (PreparedStatement psUpdate = conn.prepareStatement(updateQuery)) {
-                        psUpdate.setDouble(1, newBalance);
-                        psUpdate.setInt(2, accNo);
-                        int rowsUpdated = psUpdate.executeUpdate();
+            pstmt.setLong(1, accNo);
+            pstmt.setInt(2, pin);
 
-                        if (rowsUpdated > 0) {
-                            System.out.println("Amount credited successfully!");
-                            System.out.println("Updated Balance: " + newBalance);
-                        } else {
-                            System.out.println("Failed to update balance!");
-                        }
-                    }
-                } else {
-                    System.out.println("Account not found!");
-                }
+            ResultSet rs = pstmt.executeQuery();
+
+            if (rs.next()) {
+                // Login Success! Store the account number in our variable
+                this.loggedInAccount = accNo;
+                String name = rs.getString("name");
+                System.out.println("\nLogin Successful! Welcome, " + name);
+                return true;
+            } else {
+                System.out.println("Invalid Account Number or PIN.");
+                return false;
             }
+
         } catch (SQLException e) {
-            System.err.println("Database error during credit operation!");
+            System.out.println("Login Error: " + e.getMessage());
+            return false;
+        }
+    }
+
+    // --- 3. DEPOSIT (Uses loggedInAccount) ---
+    public void depositMoney() {
+        if (loggedInAccount == -1) {
+            System.out.println("Please login first.");
+            return;
+        }
+
+        System.out.print("Enter amount to deposit: ");
+        double amount = sc.nextDouble();
+
+        String sqlSelect = "SELECT balance FROM customer WHERE accountNo = ?";
+        String sqlUpdate = "UPDATE customer SET balance = ? WHERE accountNo = ?";
+
+        try (Connection conn = DriverManager.getConnection(url, user, password);
+             PreparedStatement psSelect = conn.prepareStatement(sqlSelect);
+             PreparedStatement psUpdate = conn.prepareStatement(sqlUpdate)) {
+
+            // Get current balance
+            psSelect.setLong(1, loggedInAccount);
+            ResultSet rs = psSelect.executeQuery();
+
+            if (rs.next()) {
+                double currentBal = rs.getDouble("balance");
+                double newBal = currentBal + amount;
+
+                // Update balance
+                psUpdate.setDouble(1, newBal);
+                psUpdate.setLong(2, loggedInAccount);
+                psUpdate.executeUpdate();
+
+                System.out.println("Deposit Successful. New Balance: " + newBal);
+            }
+
+        } catch (SQLException e) {
             e.printStackTrace();
-        } catch (Exception e) {
-            System.err.println("Invalid input. Please enter numbers.");
-            sc.nextLine(); 
         }
     }
-	
-	    public void withdrawMoney() {
-	    	System.out.println("--- Debit Money ---");
 
-	        try {
-	            System.out.print("Enter account number: ");
-	            int accNo = sc.nextInt();
-	            System.out.print("Enter amount to withdraw: ");
-	            double amount = sc.nextDouble();
+    // --- 4. WITHDRAW (Uses loggedInAccount) ---
+    public void withdrawMoney() {
+        if (loggedInAccount == -1) {
+            System.out.println("Please login first.");
+            return;
+        }
 
-	            try (Connection conn = DriverManager.getConnection(url, user, password)) {
-	                
-	                String checkQuery = "SELECT balance FROM customer WHERE accountNo = ?";
-	                double currentBalance = -1;
+        System.out.print("Enter amount to withdraw: ");
+        double amount = sc.nextDouble();
 
-	                // Check balance
-	                try (PreparedStatement psCheck = conn.prepareStatement(checkQuery)) {
-	                    psCheck.setInt(1, accNo);
-	                    try (ResultSet rs = psCheck.executeQuery()) {
-	                        if (rs.next()) {
-	                            currentBalance = rs.getDouble("balance");
-	                        }
-	                    }
-	                }
+        String sqlSelect = "SELECT balance FROM customer WHERE accountNo = ?";
+        String sqlUpdate = "UPDATE customer SET balance = ? WHERE accountNo = ?";
 
-	                if (currentBalance != -1) {
-	                    if (currentBalance >= amount) {
-	                        double newBalance = currentBalance - amount;
-	                        String updateQuery = "UPDATE customer SET balance = ? WHERE accountNo = ?";
-	                        
-	                        // Update balance
-	                        try (PreparedStatement psUpdate = conn.prepareStatement(updateQuery)) {
-	                            psUpdate.setDouble(1, newBalance);
-	                            psUpdate.setInt(2, accNo);
-	                            psUpdate.executeUpdate();
-	                            System.out.println("Amount debited successfully!");
-	                            System.out.println("Updated Balance: " + newBalance);
-	                        }
-	                    } else {
-	                        System.out.println("Insufficient balance! Available: " + currentBalance);
-	                    }
-	                } else {
-	                    System.out.println("Account not found!");
-	                }
-	            }
-	        } catch (SQLException e) {
-	            System.err.println("Error during debit operation!");
-	            e.printStackTrace();
-	        } catch (Exception e) {
-	            System.err.println("Invalid input. Please enter numbers.");
-	            sc.nextLine(); // Clear bad input
-	        }
-	    	
-	    }
-	
-	    public void CheckAcBal() {
-	    	{
-	            System.out.println("--- Check Balance / All Customers ---");
-	            
-	            String sql = "SELECT * FROM customer";
+        try (Connection conn = DriverManager.getConnection(url, user, password);
+             PreparedStatement psSelect = conn.prepareStatement(sqlSelect);
+             PreparedStatement psUpdate = conn.prepareStatement(sqlUpdate)) {
 
-	            // Use try-with-resources
-	            try (Connection conn = DriverManager.getConnection(url, user, password);
-	                 Statement stmt = conn.createStatement();
-	                 ResultSet rs = stmt.executeQuery(sql)) {
+            psSelect.setLong(1, loggedInAccount);
+            ResultSet rs = psSelect.executeQuery();
 
-	                System.out.println("----------------------------------------------");
-	                System.out.printf("%-10s | %-15s | %-20s%n", "Acc. No.", "Name", "Balance");
-	                System.out.println("----------------------------------------------");
+            if (rs.next()) {
+                double currentBal = rs.getDouble("balance");
+                
+                if (currentBal >= amount) {
+                    double newBal = currentBal - amount;
 
-	                while (rs.next()) {
-	                    System.out.printf("%-10d | %-15s | %-20.2f%n",
-	                            rs.getInt("accountNo"),
-	                            rs.getString("name"),
-	                            rs.getDouble("balance"));
-	                }
-	                System.out.println("----------------------------------------------");
+                    psUpdate.setDouble(1, newBal);
+                    psUpdate.setLong(2, loggedInAccount);
+                    psUpdate.executeUpdate();
+                    
+                    System.out.println("Withdrawal Successful. Remaining Balance: " + newBal);
+                } else {
+                    System.out.println("Insufficient Balance! Your balance is: " + currentBal);
+                }
+            }
 
-	            } catch (SQLException e) {
-	                System.err.println("Database connection failed!");
-	                e.printStackTrace();
-	            }
-	        }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
 
+    // --- 5. CHECK BALANCE (Uses loggedInAccount) ---
+    public void checkBalance() {
+        if (loggedInAccount == -1) {
+            System.out.println("Please login first.");
+            return;
+        }
+
+        String sql = "SELECT * FROM customer WHERE accountNo = ?";
+
+        try (Connection conn = DriverManager.getConnection(url, user, password);
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+
+            pstmt.setLong(1, loggedInAccount);
+            ResultSet rs = pstmt.executeQuery();
+
+            if (rs.next()) {
+                System.out.println("\n--- Account Details ---");
+                System.out.println("Name: " + rs.getString("name"));
+                System.out.println("Account No: " + rs.getLong("accountNo"));
+                System.out.println("Mobile: " + rs.getString("mobile"));
+                System.out.println("Current Balance: " + rs.getDouble("balance"));
+            }
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+    
+    // Helper to logout
+    public void logout() {
+        this.loggedInAccount = -1;
+        System.out.println("Logged out successfully.");
     }
 }
