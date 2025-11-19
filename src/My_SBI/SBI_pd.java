@@ -114,10 +114,87 @@ public class SBI_pd {
     }
 	
 	    public void withdrawMoney() {
+	    	System.out.println("--- Debit Money ---");
+
+	        try {
+	            System.out.print("Enter account number: ");
+	            int accNo = sc.nextInt();
+	            System.out.print("Enter amount to withdraw: ");
+	            double amount = sc.nextDouble();
+
+	            try (Connection conn = DriverManager.getConnection(url, user, password)) {
+	                
+	                String checkQuery = "SELECT balance FROM customer WHERE accountNo = ?";
+	                double currentBalance = -1;
+
+	                // Check balance
+	                try (PreparedStatement psCheck = conn.prepareStatement(checkQuery)) {
+	                    psCheck.setInt(1, accNo);
+	                    try (ResultSet rs = psCheck.executeQuery()) {
+	                        if (rs.next()) {
+	                            currentBalance = rs.getDouble("balance");
+	                        }
+	                    }
+	                }
+
+	                if (currentBalance != -1) {
+	                    if (currentBalance >= amount) {
+	                        double newBalance = currentBalance - amount;
+	                        String updateQuery = "UPDATE customer SET balance = ? WHERE accountNo = ?";
+	                        
+	                        // Update balance
+	                        try (PreparedStatement psUpdate = conn.prepareStatement(updateQuery)) {
+	                            psUpdate.setDouble(1, newBalance);
+	                            psUpdate.setInt(2, accNo);
+	                            psUpdate.executeUpdate();
+	                            System.out.println("Amount debited successfully!");
+	                            System.out.println("Updated Balance: " + newBalance);
+	                        }
+	                    } else {
+	                        System.out.println("Insufficient balance! Available: " + currentBalance);
+	                    }
+	                } else {
+	                    System.out.println("Account not found!");
+	                }
+	            }
+	        } catch (SQLException e) {
+	            System.err.println("Error during debit operation!");
+	            e.printStackTrace();
+	        } catch (Exception e) {
+	            System.err.println("Invalid input. Please enter numbers.");
+	            sc.nextLine(); // Clear bad input
+	        }
 	    	
 	    }
 	
 	    public void CheckAcBal() {
-    	
+	    	{
+	            System.out.println("--- Check Balance / All Customers ---");
+	            
+	            String sql = "SELECT * FROM customer";
+
+	            // Use try-with-resources
+	            try (Connection conn = DriverManager.getConnection(url, user, password);
+	                 Statement stmt = conn.createStatement();
+	                 ResultSet rs = stmt.executeQuery(sql)) {
+
+	                System.out.println("----------------------------------------------");
+	                System.out.printf("%-10s | %-15s | %-20s%n", "Acc. No.", "Name", "Balance");
+	                System.out.println("----------------------------------------------");
+
+	                while (rs.next()) {
+	                    System.out.printf("%-10d | %-15s | %-20.2f%n",
+	                            rs.getInt("accountNo"),
+	                            rs.getString("name"),
+	                            rs.getDouble("balance"));
+	                }
+	                System.out.println("----------------------------------------------");
+
+	            } catch (SQLException e) {
+	                System.err.println("Database connection failed!");
+	                e.printStackTrace();
+	            }
+	        }
+
     }
 }
